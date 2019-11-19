@@ -1,20 +1,18 @@
-
+const Machine = require('./Machine')
+const EventBus = require('./EventBus')
 class Rithmic {
 
   constructor(){
-
     this.machines = {}
-    this.tags = {}
-
+    this.eventBus = new EventBus()
   }
 
   create(schema){
-
     const machine = new Machine(schema)
     this.addMachine(machine)
-    this.assignMachineTags(machine)
     this.handleMachineMessages(machine)
 
+    return machine
   }
 
   addMachine(machine){
@@ -24,49 +22,28 @@ class Rithmic {
     else {
       this.machines[machine.id] = machine
     }
+    if(machine.schema.messages){
+      machine.schema.messages.forEach(message => {
+        this.eventBus.subscribe({
+          event: message.event,
+          subscriber: machine.id,
+          callback: machine.receive.bind(machine)
+        })
+      })
+    }
     return this
   }
 
-  assignMachineTags(machine){
-    const { schema } = machine
-
-    if(!schema.tags) return this
-
-    if(!Array.isArray(schema.tags)){
-      throw(`Machine schema tags for ${machine.id} needs to be an array`)
-    }
-
-    schema.tags.forEach(tag => {
-      if(!this.tags[tag]){
-        this.tags[tag] = []
-      }
-      this.tags[tag].push(machine)
+  handleMachineMessages(machine){
+    machine.onSend(({ event, payload }) => {
+      this.eventBus.publish({ event, payload })
     })
   }
 
-  handleMachineMessages(machine){
-    machine.onSend(({ target, event, payload }) => {
-      const { ids = [], tags = [] } = target
-
-      ids.forEach(id => {
-        try {
-          machines[id].receive(event, payload)
-        } catch(e) {
-          throw(`Cannot send message to machine ${id} as it does not exist`)
-        }
-      })
-
-      tags.forEach(tag => {
-        try {
-          machines.tags[tag].forEach(machine => {
-            machine.receive(event, payload)
-          })
-        } catch(e) {
-          throw(`Cannot send message to machines with tag ${tag}
-          as no machines are assigned with that tag`)
-        }
-      })
-    })
+  reset(){
+    this.machines = {}
   }
 
 }
+
+module.exports = new Rithmic()

@@ -1,3 +1,4 @@
+const err = require('./Errors')
 
 const ON_TRANSITION = 'onTransition'
 const ON_SEND = 'onSend'
@@ -6,12 +7,19 @@ class Machine {
 
   constructor(schema){
 
-    const { states, transitions, data = {} } = schema
+    const {
+      states,
+      transitions,
+      messages,
+      data = {},
+    } = schema
 
     this.schema = schema
-    this.states = this.objectifyStates(states)
-    this.transitions = this.objectifyTransitions(transitions)
-    this.events = this.objectifyEvents(transitions)
+    this.id = schema.id
+    this.states = this.deriveStates(states)
+    this.transitions = this.deriveTransitions(transitions)
+    this.events = this.deriveEvents(transitions)
+    this.messages = this.deriveMessages(messages)
     this.state = this.getInitialState(states)
     this.data = { ...data }
     this.observers = {}
@@ -20,63 +28,70 @@ class Machine {
 
   receive(event, payload){
     const transition = this.getTransition(event)
+    this.callMethod(this.state.exit, event, payload)
     this.state = this.states[transition.target]
+    this.callMethod(this.state.entry, event, payload)
     this.notifyObservers(ON_TRANSITION, { event, payload })
-    this.triggerActions(event, payload)
-    this.send(this.state.send)
+    this.callMethod(transition.method, event, payload)
   }
 
   getTransition(event){
-    const transition = this.transitions[`${this.state.id} ${event}`]
-    if(!transition){
-      throw(`Transition for ${state.id} ${event} does not exist`)
-    }
-    if(!this.states[transition.target]){
-      throw(`Cannot transition to state ${transition.target} as it does not exist`)
-    }
+    const key = `${this.state.id} ${event}`
+    const transition = this.transitions[key]
+    if(!transition) err(0, { stateId: this.state.id, event })
+    if(!this.states[transition.target]) err(1, { target: transition.target })
     return transition
   }
 
-  triggerActions(event, payload){
-    if(!this.schema.actions) return
-    const { data } = this.schema.actions.forEach(action({
-      event,
+  callMethod(method, event, payload){
+    if(!method || !this.schema.methods) return this
+    if(!this.schema.methods[method]) err(6, { method })
+    const { data, send, receive } = this.schema.methods[method]({
       state: this.state,
-      payload,
-      data: this.data
-    }))
+      data: this.data,
+      event,
+      payload
+    })
     if(data) this.data = data
+    if(send) this.send(send)
+    if(receive) this.receive(receive)
+    return this
   }
 
-  objectifyStates(states){
-    if(!states){
-      throw('Schema does not have any states defined')
-    }
+  deriveStates(states){
+    if(!states) err(2)
     return states.reduce((accum, state) => ({
       ...accum,
       [state.id]: state
     }), {})
   }
 
-  objectifyTransitions(transitions){
-    if(!transitions){
-      throw('Schema does not have any transitions defined')
-    }
+  deriveTransitions(transitions){
+    if(!transitions) err(3)
     return transitions.reduce((accum, transition) => {
       if(!transition.source || !transition.target || !transition.event){
-        throw('Transitions need a source, target and event')
+        err(4)
       }
+      const { source, event } = transition
       return {
         ...accum,
-        [transition.source + transition.event]: transition
+        [`${source} ${event}`]: transition
       }
     }, {})
   }
 
-  objectifyEvents(transitions){
+  deriveEvents(transitions){
     return transitions.reduce((accum, { source, event }) => ({
       ...accum,
       [source]: accum[source] ? [...accum[source], event] : [event]
+    }), {})
+  }
+
+  deriveMessages(messages){
+    if(!messages) return this
+    return messages.reduce((accum, { event, method }) => ({
+      ...accum,
+      [event]: method
     }), {})
   }
 
@@ -84,12 +99,8 @@ class Machine {
     return states.find(({ initial }) => initial)
   }
 
-  send(messageId){
-    if(!messageId) return
-    const message = this.schema.messages[messageId]
-    if(!message){
-      throw(`Message ${messageId} does not exist`)
-    }
+  send(message){
+    if(!message) return
     this.notifyObservers(ON_SEND, message)
     return this
   }
@@ -121,6 +132,7 @@ class Machine {
   }
 
   notifyObservers(event, payload){
+    if(!this.observers[event]) return this
     this.observers[event].forEach(observer => observer(payload))
     return this
   }
