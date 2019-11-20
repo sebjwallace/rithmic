@@ -31,6 +31,27 @@ class Rithmic {
         })
       })
     }
+    if(machine.schema.subscriptions){
+      machine.schema.subscriptions.forEach(subscription => {
+        this.eventBus.subscribe({
+          event: subscription.event,
+          subscriber: machine.id,
+          callback: ({ event, payload }) => {
+            machine.callMethod(subscription.method, event, payload)
+          }
+        })
+      })
+    }
+    if(machine.schema.transitions){
+      machine.schema.transitions.forEach(transition => {
+        this.eventBus.subscribe({
+          event: transition.event,
+          subscriber: machine.id,
+          callback: machine.receive.bind(machine),
+          disableDuplicateEventSubscriber: true
+        })
+      })
+    }
     return this
   }
 
@@ -38,6 +59,15 @@ class Rithmic {
     machine.onSend(({ event, payload }) => {
       this.eventBus.publish({ event, payload })
     })
+  }
+
+  send(event, payload){
+    this.eventBus.publish({event, payload})
+    return this
+  }
+
+  subscribe(args){
+    this.eventBus.subscribe(args)
   }
 
   reset(){

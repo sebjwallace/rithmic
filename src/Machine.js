@@ -26,10 +26,12 @@ class Machine {
 
   }
 
-  receive(event, payload){
+  receive({event, payload}){
     const transition = this.getTransition(event)
+    if(!transition) return false
     this.callMethod(this.state.exit, event, payload)
     this.state = this.states[transition.target]
+    console.log(event, transition.target)
     this.callMethod(this.state.entry, event, payload)
     this.notifyObservers(ON_TRANSITION, { event, payload })
     this.callMethod(transition.method, event, payload)
@@ -38,20 +40,23 @@ class Machine {
   getTransition(event){
     const key = `${this.state.id} ${event}`
     const transition = this.transitions[key]
-    if(!transition) err(0, { stateId: this.state.id, event })
-    if(!this.states[transition.target]) err(1, { target: transition.target })
+    if(!transition) return false
+    if(!this.states[transition.target]){
+      return console.warn(`State ${transition.target} does not exist`)
+    }
     return transition
   }
 
   callMethod(method, event, payload){
     if(!method || !this.schema.methods) return this
     if(!this.schema.methods[method]) err(6, { method })
-    const { data, send, receive } = this.schema.methods[method]({
+    const response = this.schema.methods[method]({
       state: this.state,
       data: this.data,
       event,
       payload
     })
+    const { data, send, receive } = response || {}
     if(data) this.data = data
     if(send) this.send(send)
     if(receive) this.receive(receive)
