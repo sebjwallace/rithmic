@@ -2,6 +2,7 @@ const err = require('./Errors')
 
 const ON_TRANSITION = 'onTransition'
 const ON_SEND = 'onSend'
+const ON_METHOD_CALL = 'onMethodCall'
 
 class Machine {
 
@@ -16,6 +17,7 @@ class Machine {
 
     this.schema = schema
     this.id = schema.id
+    this.ref = null
     this.states = this.deriveStates(states)
     this.transitions = this.deriveTransitions(transitions)
     this.events = this.deriveEvents(transitions)
@@ -31,9 +33,8 @@ class Machine {
     if(!transition) return false
     this.callMethod(this.state.exit, event, payload)
     this.state = this.states[transition.target]
-    console.log(event, transition.target)
     this.callMethod(this.state.entry, event, payload)
-    this.notifyObservers(ON_TRANSITION, { event, payload })
+    this.notifyObservers(ON_TRANSITION, { event, payload, machine: this })
     this.callMethod(transition.method, event, payload)
   }
 
@@ -56,10 +57,13 @@ class Machine {
       event,
       payload
     })
-    const { data, send, receive } = response || {}
+    const { data, send, receive, ref } = response || {}
     if(data) this.data = data
     if(send) this.send(send)
     if(receive) this.receive(receive)
+    if(ref) this.ref = ref
+    // if(destruct) delete the machine
+    this.notifyObservers(ON_METHOD_CALL, { event, payload, machine: this })
     return this
   }
 
@@ -125,6 +129,17 @@ class Machine {
 
   onTransition(callback){
     this.addObserver(ON_TRANSITION, callback)
+    return this
+  }
+
+  onMethodCall(callback){
+    this.addObserver(ON_METHOD_CALL, callback)
+    return this
+  }
+
+  watch(callback){
+    this.addObserver(ON_TRANSITION, callback)
+    this.addObserver(ON_METHOD_CALL, callback)
     return this
   }
 

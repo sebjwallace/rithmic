@@ -41,4 +41,16 @@ module.exports = class EventBus {
     return this
   }
 
+  unsubscribe({ subscriber }){
+    for(let i in this.events){
+      const subscribers = this.events[i]
+      for(let j = subscribers.length - 1; j >= 0; j--){
+        if(subscribers[j].subscriber === subscriber){
+          subscribers.splice(j,1)
+        }
+      }
+    }
+    return this
+  }
+
 }
