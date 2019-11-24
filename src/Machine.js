@@ -3,12 +3,13 @@ const err = require('./Errors')
 const ON_TRANSITION = 'onTransition'
 const ON_SEND = 'onSend'
 const ON_METHOD_CALL = 'onMethodCall'
-
+const ON_ADD_TAG = 'onAddTag'
 class Machine {
 
   constructor(schema){
 
     const {
+      tags = [],
       states,
       transitions,
       messages,
@@ -17,11 +18,12 @@ class Machine {
 
     this.schema = schema
     this.id = schema.id
+    this.tags = [...tags]
     this.ref = null
-    this.states = this.deriveStates(states)
-    this.transitions = this.deriveTransitions(transitions)
-    this.events = this.deriveEvents(transitions)
-    this.messages = this.deriveMessages(messages)
+    this.states = this.indexStates(states)
+    this.transitions = this.indexTransitions(transitions)
+    this.events = this.indexEvents(transitions)
+    this.messages = this.indexMessages(messages)
     this.state = this.getInitialState(states)
     this.data = { ...data }
     this.observers = {}
@@ -29,8 +31,9 @@ class Machine {
   }
 
   receive({event, payload}){
-    const transition = this.getTransition(event)
+    const transition = this.getTransition(event, payload)
     if(!transition) return false
+    if(!this.validateTransition(transition, event, payload)) return false
     this.callMethod(this.state.exit, event, payload)
     this.state = this.states[transition.target]
     this.callMethod(this.state.entry, event, payload)
@@ -38,14 +41,27 @@ class Machine {
     this.callMethod(transition.method, event, payload)
   }
 
-  getTransition(event){
+  getTransition(event, payload){
     const key = `${this.state.id} ${event}`
-    const transition = this.transitions[key]
+    let transition = this.transitions[key]
     if(!transition) return false
-    if(!this.states[transition.target]){
+    const isConditional = Array.isArray(transition.target)
+    if(isConditional){
+      const index = this.callMethod(transition.target[0], event, payload)
+      transition = { ...transition, target: transition.target[!index + 1] }
+    }
+    const targetState = !this.states[transition.target]
+    if(targetState){
       return console.warn(`State ${transition.target} does not exist`)
     }
     return transition
+  }
+
+  validateTransition(transition, event, payload){
+    if(!transition.guard) return true
+    const guard = this.schema.methods[transition.guard]
+    const isGuarded = guard({ data: this.data, event, payload })
+    return isGuarded
   }
 
   callMethod(method, event, payload){
@@ -57,46 +73,46 @@ class Machine {
       event,
       payload
     })
-    const { data, send, receive, ref } = response || {}
+    const { data, send, receive, addTag } = response || {}
     if(data) this.data = data
     if(send) this.send(send)
     if(receive) this.receive(receive)
-    if(ref) this.ref = ref
+    if(addTag) this.addTag(addTag)
     // if(destruct) delete the machine
     this.notifyObservers(ON_METHOD_CALL, { event, payload, machine: this })
-    return this
+    return response
   }
 
-  deriveStates(states){
-    if(!states) err(2)
+  indexStates(states){
+    if(!states) return
     return states.reduce((accum, state) => ({
       ...accum,
       [state.id]: state
     }), {})
   }
 
-  deriveTransitions(transitions){
-    if(!transitions) err(3)
+  indexTransitions(transitions){
+    if(!transitions) return
     return transitions.reduce((accum, transition) => {
-      if(!transition.source || !transition.target || !transition.event){
-        err(4)
-      }
-      const { source, event } = transition
+      const { source, target, event } = transition
+      const isInvalid = source && target && event
+      if(!isInvalid) err(4)
+      const transitionKey = `${source} ${event}`
       return {
         ...accum,
-        [`${source} ${event}`]: transition
+        [transitionKey]: transition
       }
     }, {})
   }
 
-  deriveEvents(transitions){
+  indexEvents(transitions){
     return transitions.reduce((accum, { source, event }) => ({
       ...accum,
       [source]: accum[source] ? [...accum[source], event] : [event]
     }), {})
   }
 
-  deriveMessages(messages){
+  indexMessages(messages){
     if(!messages) return this
     return messages.reduce((accum, { event, method }) => ({
       ...accum,
@@ -112,6 +128,21 @@ class Machine {
     if(!message) return
     this.notifyObservers(ON_SEND, message)
     return this
+  }
+
+  addTag(tag){
+    this.tags.push(tag)
+    this.notifyObservers(ON_ADD_TAG, tag)
+    return this
+  }
+
+  getStates(){
+    let accum = []
+    if(!this.state) return {}
+    return this.state.id.split('.').reduce((states, state) => {
+      accum.push(state)
+      return { ...states, [accum.join('.')]: true }
+    }, {})
   }
 
   isCurrentState(stateId){
@@ -134,6 +165,11 @@ class Machine {
 
   onMethodCall(callback){
     this.addObserver(ON_METHOD_CALL, callback)
+    return this
+  }
+
+  onAddTag(callback){
+    this.addObserver(ON_ADD_TAG, callback)
     return this
   }
 

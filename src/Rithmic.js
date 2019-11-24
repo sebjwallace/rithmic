@@ -1,18 +1,20 @@
 const Machine = require('./Machine')
 const EventBus = require('./EventBus')
+const Registry = require('./Registry')
+const Util = require('./Util')
 class Rithmic {
 
   constructor(){
-    this.machines = {}
-    this.schemas = {}
-    this.refs = {}
     this.eventBus = new EventBus()
+    this.machineRegistry = new Registry()
+    this.schemaRegistry = new Registry()
   }
 
   create(schema){
     let machine
-    if(typeof schema === 'string'){
-      machine = new Machine(this.schemas[schema])
+    const fromRegisteredSchema = typeof schema === 'string'
+    if(fromRegisteredSchema){
+      machine = new Machine(this.schemaRegistry.get({ id: schema }))
     }
     else {
       machine = new Machine(schema)
@@ -22,48 +24,62 @@ class Rithmic {
   }
 
   register(schema){
-    if(this.schemas[schema.id]) return this
-    this.schemas[schema.id] = schema
+    this.schemaRegistry.register({
+      item: schema,
+      id: schema.id,
+      tags: schema.tags
+    })
     this.handleLifecycles(schema)
     return this
   }
 
   addMachine(machine){
-    if(this.machines[machine.id]){
-      throw(`The machine ${machine.id} already exists`)
-    }
-    else {
-      this.machines[machine.id] = machine
-    }
-    if(machine.schema.subscriptions){
-      machine.schema.subscriptions.forEach(subscription => {
-        this.eventBus.subscribe({
-          event: subscription.event,
-          subscriber: machine.id,
-          callback: ({ event, payload }) => {
-            machine.callMethod(subscription.method, event, payload)
-          }
-        })
-      })
-    }
-    if(machine.schema.transitions){
-      machine.schema.transitions.forEach(transition => {
-        this.eventBus.subscribe({
-          event: transition.event,
-          subscriber: machine.id,
-          callback: machine.receive.bind(machine),
-          disableDuplicateEventSubscriber: true
-        })
-      })
-    }
+    this.machineRegistry.register({
+      item: machine,
+      id: machine.id,
+      tags: machine.tags
+    })
+    machine.onAddTag(tag => this.machineRegistry.bindTag({
+      item: machine,
+      id: machine,
+      tag
+    }))
+    
+    this.handleMachineSubscriptions(machine)
     this.handleMachineMessages(machine)
     return this
   }
 
   removeMachine(machine){
     this.eventBus.unsubscribe({ subscriber: machine.id })
-    delete this.machines[machine.id]
+    this.machineRegistry.remove(machine.id)
     return this
+  }
+
+  handleMachineSubscriptions(machine){
+    const { subscriptions, transitions } = machine.schema
+    if(subscriptions){
+      subscriptions.forEach(({ create, event, method }) => {
+        if(create) return
+        this.eventBus.subscribe({
+          event,
+          subscriber: machine.id,
+          callback: ({ event, payload }) => {
+            machine.callMethod(method, event, payload)
+          }
+        })
+      })
+    }
+    if(transitions){
+      transitions.forEach(({ event }) => {
+        this.eventBus.subscribe({
+          event,
+          subscriber: machine.id,
+          callback: machine.receive.bind(machine),
+          disableDuplicateEventSubscriber: true
+        })
+      })
+    }
   }
 
   handleMachineMessages(machine){
@@ -73,29 +89,26 @@ class Rithmic {
   }
 
   handleLifecycles(schema){
-    const random = Math.random().toString(36).substring(2)
-    const machineId = `${schema.id}_${random}`
-    const subscriptions = schema.subscriptions
-    if(subscriptions){
-      subscriptions.forEach(subscription => {
-        if(subscription.create){
-          this.eventBus.subscribe({
-            event: subscription.event,
-            subscriber: schema.id,
-            callback: ({ event, payload }) => {
-              const machine = new Machine(schema)
-              machine.id = machineId
-              this.addMachine(machine)
-              machine.callMethod(subscription.method, event, payload)
-            }
-          })
+    const { subscriptions } = schema
+    if(!subscriptions) return
+    subscriptions.forEach(({ create, event, method }) => {
+      if(!create) return
+      this.eventBus.subscribe({
+        event: event,
+        subscriber: schema.id,
+        callback: ({ event, payload }) => {
+          const machine = new Machine(schema)
+          machine.id = Util.Uniquify(machine.id)
+          this.addMachine(machine)
+          machine.callMethod(method, event, payload)
         }
       })
-    }
+    })
   }
 
-  send(event, payload){
-    this.eventBus.publish({event, payload})
+  send(events){
+    if(!Array.isArray(events)) events = [events]
+    events.forEach(event => event && this.eventBus.publish(event))
     return this
   }
 
@@ -103,20 +116,10 @@ class Rithmic {
     this.eventBus.subscribe(args)
   }
 
-  useMachine({ ref, id }){
-    if(this.machines[id]) return this.machines[id]
-    if(this.refs[ref]) return this.refs[ref]
-    for(let key in this.machines){
-      const machine = this.machines[key]
-      if(machine.ref === ref){
-        this.refs[ref] = machine
-        return machine
-      }
-    }
-  }
+  useMachine({ tag, id }){
 
-  reset(){
-    this.machines = {}
+    return this.machineRegistry.get({ id, tag })
+
   }
 
 }
