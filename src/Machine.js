@@ -124,9 +124,10 @@ class Machine {
     return states.find(({ initial }) => initial)
   }
 
-  send(message){
-    if(!message) return
-    this.notifyObservers(ON_SEND, message)
+  send(messages){
+    if(!messages) return
+    if(!Array.isArray(messages)) messages = [messages]
+    messages.forEach(message => message && this.notifyObservers(ON_SEND, message))
     return this
   }
 

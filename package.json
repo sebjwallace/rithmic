@@ -2,7 +2,7 @@
   "name": "rithmic",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "src/Rithmic.js",
   "scripts": {
     "test": "node_modules/.bin/mocha test/**/*.test.js --reporter spec",
     "coverage": "nyc npm run test"
