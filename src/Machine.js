@@ -124,6 +124,12 @@ class Machine {
     return states.find(({ initial }) => initial)
   }
 
+  callConstructor(){
+    if(this.schema.methods.constructor){
+      this.callMethod('constructor')
+    }
+  }
+
   send(messages){
     if(!messages) return
     if(!Array.isArray(messages)) messages = [messages]
@@ -148,6 +154,10 @@ class Machine {
 
   isCurrentState(stateId){
     return this.state.id == stateId
+  }
+
+  is(stateId){
+    return this.getStates()[stateId]
   }
 
   isEventAvailable(event){

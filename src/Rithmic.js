@@ -12,9 +12,13 @@ class Rithmic {
 
   create(schema){
     let machine
-    const fromRegisteredSchema = typeof schema === 'string'
+    const fromRegisteredSchema = schema.schema || typeof schema === 'string'
     if(fromRegisteredSchema){
-      machine = new Machine(this.schemaRegistry.get({ id: schema }))
+      machine = new Machine(this.schemaRegistry.get({ id: schema.schema || schema }))
+      if(schema.schema && schema.data){
+        machine.data = { ...machine.data, ...schema.data }
+      }
+      machine.id = Util.Uniquify(machine.id)
     }
     else {
       machine = new Machine(schema)
@@ -47,6 +51,7 @@ class Rithmic {
     
     this.handleMachineSubscriptions(machine)
     this.handleMachineMessages(machine)
+    machine.callConstructor()
     return this
   }
 
@@ -117,9 +122,7 @@ class Rithmic {
   }
 
   useMachine({ tag, id }){
-
     return this.machineRegistry.get({ id, tag })
-
   }
 
 }
