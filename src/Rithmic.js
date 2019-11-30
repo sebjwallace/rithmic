@@ -97,9 +97,8 @@ class Rithmic {
 
   handleChildrenRequests(machine){
     machine.onCreateChildRequest(({ id, schema, payload }) => {
-      const childMachine = this.create({ schema })
+      const childMachine = this.create({ schema }, payload)
       machine.addChildReference({ id, machine: childMachine })
-      childMachine.callConstructor(payload)
     })
   }
 
