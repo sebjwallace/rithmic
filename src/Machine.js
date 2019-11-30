@@ -1,9 +1,11 @@
 const err = require('./Errors')
 
-const ON_TRANSITION = 'onTransition'
-const ON_SEND = 'onSend'
-const ON_METHOD_CALL = 'onMethodCall'
-const ON_ADD_TAG = 'onAddTag'
+const ON_TRANSITION = 1
+const ON_SEND = 2
+const ON_METHOD_CALL = 3
+const ON_ADD_TAG = 4
+const ON_DELETE = 5
+const ON_CREATE_CHILD_REQUEST = 6
 class Machine {
 
   constructor(schema){
@@ -13,6 +15,7 @@ class Machine {
       states,
       transitions,
       messages,
+      children,
       data = {},
     } = schema
 
@@ -24,6 +27,8 @@ class Machine {
     this.transitions = this.indexTransitions(transitions)
     this.events = this.indexEvents(transitions)
     this.messages = this.indexMessages(messages)
+    this.children = this.indexChildren(children)
+    this.childRefs = this.initChildRefs(children)
     this.state = this.getInitialState(states)
     this.data = { ...data }
     this.observers = {}
@@ -73,12 +78,20 @@ class Machine {
       event,
       payload
     })
-    const { data, send, receive, addTag } = response || {}
+    const {
+      data,
+      send,
+      receive,
+      addTag,
+      delete: del,
+      create
+    } = response || {}
     if(data) this.data = data
     if(send) this.send(send)
     if(receive) this.receive(receive)
     if(addTag) this.addTag(addTag)
-    // if(destruct) delete the machine
+    if(create) this.sendChildRequest(create)
+    if(del) this.delete()
     this.notifyObservers(ON_METHOD_CALL, { event, payload, machine: this })
     return response
   }
@@ -120,13 +133,32 @@ class Machine {
     }), {})
   }
 
+  indexChildren(children){
+    if(!children) return {}
+    return children.reduce((accum, child) => ({
+      ...accum,
+      [child.id]: child
+    }), {})
+  }
+
+  initChildRefs(children){
+    if(!children) return {}
+    return children.reduce((accum, child) => {
+      const isArray = Array.isArray(child.schema)
+      return {
+        ...accum,
+        [child.id]: isArray ? [] : null
+      }
+    }, {})
+  }
+
   getInitialState(states){
     return states.find(({ initial }) => initial)
   }
 
-  callConstructor(){
+  callConstructor(payload){
     if(this.schema.methods.constructor){
-      this.callMethod('constructor')
+      this.callMethod('constructor', null, payload)
     }
   }
 
@@ -137,9 +169,31 @@ class Machine {
     return this
   }
 
+  sendChildRequest({ child, payload }){
+    this.notifyObservers(ON_CREATE_CHILD_REQUEST, {
+      ...this.children[child],
+      payload
+    })
+    return this
+  }
+
+  addChildReference({ id, machine }){
+    const { schema } = this.children[id]
+    const isArray = Array.isArray(schema)
+    const ref = this.childRefs[id]
+    if(isArray) ref.push(machine)
+    else this.childRefs[id] = machine
+    return this
+  }
+
   addTag(tag){
     this.tags.push(tag)
     this.notifyObservers(ON_ADD_TAG, tag)
+    return this
+  }
+
+  delete(){
+    this.notifyObservers(ON_DELETE, this)
     return this
   }
 
@@ -181,6 +235,16 @@ class Machine {
 
   onAddTag(callback){
     this.addObserver(ON_ADD_TAG, callback)
+    return this
+  }
+
+  onDelete(callback){
+    this.addObserver(ON_DELETE, callback)
+    return this
+  }
+
+  onCreateChildRequest(callback){
+    this.addObserver(ON_CREATE_CHILD_REQUEST, callback)
     return this
   }
 

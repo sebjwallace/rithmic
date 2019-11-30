@@ -10,7 +10,7 @@ class Rithmic {
     this.schemaRegistry = new Registry()
   }
 
-  create(schema){
+  create(schema, constructorPayload){
     let machine
     const fromRegisteredSchema = schema.schema || typeof schema === 'string'
     if(fromRegisteredSchema){
@@ -23,7 +23,7 @@ class Rithmic {
     else {
       machine = new Machine(schema)
     }
-    this.addMachine(machine)
+    this.addMachine(machine, constructorPayload)
     return machine
   }
 
@@ -37,7 +37,7 @@ class Rithmic {
     return this
   }
 
-  addMachine(machine){
+  addMachine(machine, constructorPayload){
     this.machineRegistry.register({
       item: machine,
       id: machine.id,
@@ -48,10 +48,12 @@ class Rithmic {
       id: machine,
       tag
     }))
+    machine.onDelete(() => this.removeMachine(machine))
     
     this.handleMachineSubscriptions(machine)
     this.handleMachineMessages(machine)
-    machine.callConstructor()
+    this.handleChildrenRequests(machine)
+    machine.callConstructor(constructorPayload)
     return this
   }
 
@@ -93,6 +95,14 @@ class Rithmic {
     })
   }
 
+  handleChildrenRequests(machine){
+    machine.onCreateChildRequest(({ id, schema, payload }) => {
+      const childMachine = this.create({ schema })
+      machine.addChildReference({ id, machine: childMachine })
+      childMachine.callConstructor(payload)
+    })
+  }
+
   handleLifecycles(schema){
     const { subscriptions } = schema
     if(!subscriptions) return
@@ -123,6 +133,23 @@ class Rithmic {
 
   useMachine({ tag, id }){
     return this.machineRegistry.get({ id, tag })
+  }
+
+  getMachineTree(rootMachine){
+    const traverse = machine => ({
+      machine,
+      children: machine.childRefs.map(traverse)
+    })
+    return traverse(rootMachine)
+  }
+
+  getObjectTree(rootMachine){
+    const traverse = machine => ({
+      data: machine.data,
+      states: machine.getStates(),
+      children: machine.childRefs.map(traverse)
+    })
+    return traverse(rootMachine)
   }
 
 }
