@@ -134,20 +134,24 @@ class Rithmic {
     return this.machineRegistry.get({ id, tag })
   }
 
-  getMachineTree(rootMachine){
-    const traverse = machine => ({
-      machine,
-      children: machine.childRefs.map(traverse)
-    })
-    return traverse(rootMachine)
-  }
-
   getObjectTree(rootMachine){
-    const traverse = machine => ({
-      data: machine.data,
-      states: machine.getStates(),
-      children: machine.childRefs.map(traverse)
-    })
+    const traverse = machine => {
+      const childKeys = Object.keys(machine.childRefs)
+      const children = childKeys.reduce((accum, key) => {
+        const child = machine.childRefs[key]
+        if(!child) return accum
+        const isArray = Array.isArray(child)
+        return {
+          ...accum,
+          [key]: isArray ? child.map(traverse) : child
+        }
+      }, {})
+      return {
+        data: machine.data,
+        states: machine.getStates(),
+        children
+      }
+    }
     return traverse(rootMachine)
   }
 
