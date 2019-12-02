@@ -1,55 +1,30 @@
 const Machine = require('./Machine')
 const EventBus = require('./EventBus')
-const Registry = require('./Registry')
 const Util = require('./Util')
+const MachineFactory = require('./MachineFactory')
+const Tree = require('./Tree')
 class Rithmic {
 
   constructor(){
     this.eventBus = new EventBus()
-    this.machineRegistry = new Registry()
-    this.schemaRegistry = new Registry()
+    this.machineFactory = new MachineFactory()
+    this.tree = new Tree({ machineFactory: this.machineFactory })
   }
 
   create(schema, constructorPayload){
-    let machine
-    const fromRegisteredSchema = schema.schema || typeof schema === 'string'
-    if(fromRegisteredSchema){
-      machine = new Machine(this.schemaRegistry.get({ id: schema.schema || schema }))
-      if(schema.schema && schema.data){
-        machine.data = { ...machine.data, ...schema.data }
-      }
-      machine.id = Util.Uniquify(machine.id)
-    }
-    else {
-      machine = new Machine(schema)
-    }
+    const machine = this.machineFactory.createAndRegister(schema)
     this.addMachine(machine, constructorPayload)
     return machine
   }
 
   register(schema){
-    this.schemaRegistry.register({
-      item: schema,
-      id: schema.id,
-      tags: schema.tags
-    })
+    this.machineFactory.registerSchema(schema)
     this.handleLifecycles(schema)
     return this
   }
 
   addMachine(machine, constructorPayload){
-    this.machineRegistry.register({
-      item: machine,
-      id: machine.id,
-      tags: machine.tags
-    })
-    machine.onAddTag(tag => this.machineRegistry.bindTag({
-      item: machine,
-      id: machine,
-      tag
-    }))
     machine.onDelete(() => this.removeMachine(machine))
-    
     this.handleMachineSubscriptions(machine)
     this.handleMachineMessages(machine)
     this.handleChildrenRequests(machine)
@@ -59,7 +34,7 @@ class Rithmic {
 
   removeMachine(machine){
     this.eventBus.unsubscribe({ subscriber: machine.id })
-    this.machineRegistry.remove(machine.id)
+    this.machineFactory.removeMachine(machine)
     return this
   }
 
@@ -132,27 +107,6 @@ class Rithmic {
 
   useMachine({ tag, id }){
     return this.machineRegistry.get({ id, tag })
-  }
-
-  getObjectTree(rootMachine){
-    const traverse = machine => {
-      const childKeys = Object.keys(machine.childRefs)
-      const children = childKeys.reduce((accum, key) => {
-        const child = machine.childRefs[key]
-        if(!child) return accum
-        const isArray = Array.isArray(child)
-        return {
-          ...accum,
-          [key]: isArray ? child.map(traverse) : child
-        }
-      }, {})
-      return {
-        data: machine.data,
-        states: machine.getStates(),
-        children
-      }
-    }
-    return traverse(rootMachine)
   }
 
 }
