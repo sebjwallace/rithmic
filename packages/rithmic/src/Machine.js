@@ -83,14 +83,12 @@ class Machine {
       send,
       receive,
       addTag,
-      delete: del,
-      create
+      delete: del
     } = response || {}
     if(data) this.data = data
     if(send) this.send(send)
     if(receive) this.receive(receive)
     if(addTag) this.addTag(addTag)
-    if(create) this.sendChildRequest(create)
     if(del) this.delete()
     this.notifyObservers(ON_METHOD_CALL, { event, payload, machine: this })
     return response
@@ -157,32 +155,17 @@ class Machine {
   }
 
   callConstructor(payload){
-    if(this.schema.methods.constructor){
+    const { methods } = this.schema
+    if(methods && methods.constructor){
       this.callMethod('constructor', null, payload)
     }
   }
 
   send(messages){
+    console.log('send')
     if(!messages) return
     if(!Array.isArray(messages)) messages = [messages]
     messages.forEach(message => message && this.notifyObservers(ON_SEND, message))
-    return this
-  }
-
-  sendChildRequest({ child, payload }){
-    this.notifyObservers(ON_CREATE_CHILD_REQUEST, {
-      ...this.children[child],
-      payload
-    })
-    return this
-  }
-
-  addChildReference({ id, machine }){
-    const { schema } = this.children[id]
-    const isArray = Array.isArray(schema)
-    const ref = this.childRefs[id]
-    if(isArray) ref.push(machine)
-    else this.childRefs[id] = machine
     return this
   }
 
