@@ -14,7 +14,6 @@ module.exports = class Installer {
     this.handleSubscriptions(machine)
     this.handleTransitions(machine)
     this.handleMachineMessages(machine)
-    machine.callConstructor()
     return this
   }
 

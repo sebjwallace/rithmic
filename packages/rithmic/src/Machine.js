@@ -162,7 +162,6 @@ class Machine {
   }
 
   send(messages){
-    console.log('send')
     if(!messages) return
     if(!Array.isArray(messages)) messages = [messages]
     messages.forEach(message => message && this.notifyObservers(ON_SEND, message))

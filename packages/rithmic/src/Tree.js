@@ -28,23 +28,23 @@ module.exports = class Tree {
     const traverse = (node, parent) => {
       const { schema, children = [] } = node
       const machine = this.machineFactory.create({ schema })
+      const obj = { machine, definition: node }
       this.installer.installMachine(machine)
-      const childMachines = children.map(child => traverse(child, machine))
-      if(node.event){
-        parent.onSend(({ event, payload }) => {
-          console.log(event, payload)
-          if(event === node.event){
-            childMachines.forEach(child => {
-              child.receive({ event, payload })
-            })
+      const childMachines = children.map(child => traverse(child, obj))
+      if(node.create){
+        parent.machine.onSend(({ event, payload }) => {
+          if(event === node.create){
+            const child = traverse(node, parent)
+            parent.children.push(child)
+            child.machine.callConstructor(payload)
           }
         })
       }
-      return {
-        machine,
-        children: childMachines,
-        definition: node
+      if(node.delete){
+        // delete machine and remove from parent array
       }
+      obj.children = childMachines
+      return obj
     }
     
     const { root } = this.treeRegistry.get({ id: treeId })
