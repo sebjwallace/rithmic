@@ -3,10 +3,12 @@ module.exports = class Installer {
 
   constructor({
     eventBus,
-    machineFactory
+    machineFactory,
+    watchMultiplex
   }){
     this.eventBus = eventBus
     this.machineFactory = machineFactory
+    this.watchMultiplex = watchMultiplex
   }
 
   installMachine(machine){
@@ -14,6 +16,7 @@ module.exports = class Installer {
     this.handleSubscriptions(machine)
     this.handleTransitions(machine)
     this.handleMachineMessages(machine)
+    machine.watch(this.watchMultiplex.receive)
     return this
   }
 
@@ -23,7 +26,8 @@ module.exports = class Installer {
     return this
   }
 
-  handleSubscriptions({ schema: { subscriptions } }){
+  handleSubscriptions(machine){
+    const { schema: { subscriptions } } = machine
     if(!subscriptions) return
     subscriptions.forEach(({ event, method }) => {
       this.eventBus.subscribe({
@@ -36,7 +40,8 @@ module.exports = class Installer {
     })
   }
 
-  handleTransitions({ schema: { transitions } }){
+  handleTransitions(machine){
+    const { schema: { transitions } } = machine
     if(!transitions) return
     transitions.forEach(({ event }) => {
       this.eventBus.subscribe({

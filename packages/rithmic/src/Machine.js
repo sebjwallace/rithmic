@@ -1,3 +1,4 @@
+const Observable = require('./Observable')
 const err = require('./Errors')
 
 const ON_TRANSITION = 1
@@ -15,7 +16,6 @@ class Machine {
       states,
       transitions,
       messages,
-      children,
       data = {},
     } = schema
 
@@ -27,11 +27,9 @@ class Machine {
     this.transitions = this.indexTransitions(transitions)
     this.events = this.indexEvents(transitions)
     this.messages = this.indexMessages(messages)
-    this.children = this.indexChildren(children)
-    this.childRefs = this.initChildRefs(children)
     this.state = this.getInitialState(states)
     this.data = { ...data }
-    this.observers = {}
+    this.observable = new Observable()
 
   }
 
@@ -42,7 +40,7 @@ class Machine {
     this.callMethod(this.state.exit, event, payload)
     this.state = this.states[transition.target]
     this.callMethod(this.state.entry, event, payload)
-    this.notifyObservers(ON_TRANSITION, { event, payload, machine: this })
+    this.observable.publish(ON_TRANSITION, { event, payload, machine: this })
     this.callMethod(transition.method, event, payload)
   }
 
@@ -90,7 +88,7 @@ class Machine {
     if(receive) this.receive(receive)
     if(addTag) this.addTag(addTag)
     if(del) this.delete()
-    this.notifyObservers(ON_METHOD_CALL, { event, payload, machine: this })
+    this.observable.publish(ON_METHOD_CALL, { event, payload, machine: this })
     return response
   }
 
@@ -131,25 +129,6 @@ class Machine {
     }), {})
   }
 
-  indexChildren(children){
-    if(!children) return {}
-    return children.reduce((accum, child) => ({
-      ...accum,
-      [child.id]: child
-    }), {})
-  }
-
-  initChildRefs(children){
-    if(!children) return {}
-    return children.reduce((accum, child) => {
-      const isArray = Array.isArray(child.schema)
-      return {
-        ...accum,
-        [child.id]: isArray ? [] : null
-      }
-    }, {})
-  }
-
   getInitialState(states){
     return states.find(({ initial }) => initial)
   }
@@ -164,18 +143,18 @@ class Machine {
   send(messages){
     if(!messages) return
     if(!Array.isArray(messages)) messages = [messages]
-    messages.forEach(message => message && this.notifyObservers(ON_SEND, message))
+    messages.forEach(message => message && this.observable.publish(ON_SEND, message))
     return this
   }
 
   addTag(tag){
     this.tags.push(tag)
-    this.notifyObservers(ON_ADD_TAG, tag)
+    this.observable.publish(ON_ADD_TAG, tag)
     return this
   }
 
   delete(){
-    this.notifyObservers(ON_DELETE, this)
+    this.observable.publish(ON_DELETE, this)
     return this
   }
 
@@ -201,52 +180,33 @@ class Machine {
   }
 
   onSend(callback){
-    this.addObserver(ON_SEND, callback)
+    this.observable.subscribe(ON_SEND, callback)
     return this
   }
 
   onTransition(callback){
-    this.addObserver(ON_TRANSITION, callback)
+    this.observable.subscribe(ON_TRANSITION, callback)
     return this
   }
 
   onMethodCall(callback){
-    this.addObserver(ON_METHOD_CALL, callback)
+    this.observable.subscribe(ON_METHOD_CALL, callback)
     return this
   }
 
   onAddTag(callback){
-    this.addObserver(ON_ADD_TAG, callback)
+    this.observable.subscribe(ON_ADD_TAG, callback)
     return this
   }
 
   onDelete(callback){
-    this.addObserver(ON_DELETE, callback)
-    return this
-  }
-
-  onCreateChildRequest(callback){
-    this.addObserver(ON_CREATE_CHILD_REQUEST, callback)
+    this.observable.subscribe(ON_DELETE, callback)
     return this
   }
 
   watch(callback){
-    this.addObserver(ON_TRANSITION, callback)
-    this.addObserver(ON_METHOD_CALL, callback)
-    return this
-  }
-
-  addObserver(event, callback){
-    if(!this.observers[event]){
-      this.observers[event] = []
-    }
-    this.observers[event].push(callback)
-    return this
-  }
-
-  notifyObservers(event, payload){
-    if(!this.observers[event]) return this
-    this.observers[event].forEach(observer => observer(payload))
+    this.observable.subscribe(ON_TRANSITION, callback)
+    this.observable.subscribe(ON_METHOD_CALL, callback)
     return this
   }
 

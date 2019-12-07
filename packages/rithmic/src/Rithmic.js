@@ -2,18 +2,22 @@ const EventBus = require('./EventBus')
 const MachineFactory = require('./MachineFactory')
 const Installer = require('./Installer')
 const Tree = require('./Tree')
+const WatchMultiplex = require('./WatchMultiplex')
 class Rithmic {
 
   constructor(){
     this.eventBus = new EventBus()
     this.machineFactory = new MachineFactory()
+    this.watchMultiplex = new WatchMultiplex()
     this.installer = new Installer({
       eventBus: this.eventBus,
-      machineFactory: this.machineFactory
+      machineFactory: this.machineFactory,
+      watchMultiplex: this.watchMultiplex
     })
     this.tree = new Tree({
       installer: this.installer,
-      machineFactory: this.machineFactory
+      machineFactory: this.machineFactory,
+      eventBus: this.eventBus
     })
   }
 
@@ -29,13 +33,18 @@ class Rithmic {
   }
 
   send(events){
-    if(!Array.isArray(events)) events = [events]
-    events.forEach(event => event && this.eventBus.publish(event))
+    this.eventBus.publish(events)
     return this
   }
 
   subscribe(args){
     this.eventBus.subscribe(args)
+    return this
+  }
+
+  watch(callback){
+    this.watchMultiplex.subscribe(callback)
+    return this
   }
 
   getMachine({ tag, id }){
