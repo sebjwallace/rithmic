@@ -5,8 +5,8 @@ module.exports = class Observable {
     this.signatures = {}
   }
 
-  subscribe(event, callback){
-    const signature = `${event}_${callback.toString()}`
+  subscribe(event, callback, signature){
+    signature = signature || `${event}_${callback.toString()}`
     if(this.signatures[signature]) return
     if(!this.observers[event]){
       this.observers[event] = []

@@ -27,7 +27,7 @@ module.exports = class Tree {
 
   createMachineTree(treeId){
 
-    const traverse = (node, parent) => {
+    const traverse = (node) => {
       const { schema, children = [] } = node
 
       /* create and register the machine */
@@ -41,38 +41,51 @@ module.exports = class Tree {
       this.installer.installMachine(machine)
 
       /* create the machine tree from the child as the root */
-      const childMachines = children.map(child => traverse(child, obj))
+      const childMachines = children.reduce((accum, child) => {
 
-      /* the 'create' directive allows the parent to create a child */
-      /* by sending an event */
-      if(node.create){
+        /* only create a child if its a singleton */
+        if(!child.array){
+          return [ ...accum, traverse(child) ]
+        }
 
-        /* watch the parent for any events it sends */
-        parent.machine.onSend(({ event, payload }) => {
+        /* the 'create' directive allows the parent to create a child */
+        /* by sending an event */
+        if(child.create){
 
-          /* if the event the parent sends is not the 'create' */
-          /* event then just return forward */
-          if(event !== node.create) return
+          const signature = `${machine.id}_${child.schema}`
 
-          /* the 'create' directive takes effect and creates a child */
-          const child = traverse(node, parent)
+          /* watch the parent for any events it sends */
+          machine.onSend(({ event, payload }) => {
 
-          /* the child is added to the machine tree */
-          parent.children.push(child)
+            /* if the event the parent sends is not the 'create' */
+            /* event then just return forward */
+            if(event !== child.create) return
 
-          /* the child can delete itself. when it does remove it from the tree */
-          child.machine.onDelete(() => {
-            const index = parent.children.findIndex(({ machine }) => {
-              machine.id === child.machine.id
+            /* the 'create' directive takes effect and creates a child */
+            const childNode = traverse(child)
+
+            /* the child is added to the machine tree */
+            obj.children.push(childNode)
+
+            /* the child can delete itself. when it does remove it from the tree */
+            childNode.machine.onDelete(() => {
+              const index = obj.children.findIndex(({ machine }) => {
+                machine.id === childNode.machine.id
+              })
+              obj.children.splice(index, 1)
             })
-            parent.children.splice(index, 1)
-          })
 
-          /* once child is created and added then call constructor */
-          child.machine.callConstructor(payload)
-        })
-      }
+            /* once child is created and added then call constructor */
+            childNode.machine.callConstructor(payload)
+          }, signature)
+
+        }
+
+        return accum
+      }, [])
+
       obj.children = childMachines
+      
       return obj
     }
     
@@ -102,10 +115,11 @@ module.exports = class Tree {
 
       return {
         data: machine.data,
-        state: machine.getStates(),
+        state: machine.getStates({ explode: true }),
         children: childrenObject,
         send: this.eventBus.publish.bind(this.eventBus),
-        key: machine.id
+        key: machine.id,
+        machine
       }
     }
 

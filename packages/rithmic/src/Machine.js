@@ -6,7 +6,7 @@ const ON_SEND = 2
 const ON_METHOD_CALL = 3
 const ON_ADD_TAG = 4
 const ON_DELETE = 5
-const ON_CREATE_CHILD_REQUEST = 6
+
 class Machine {
 
   constructor(schema){
@@ -27,36 +27,51 @@ class Machine {
     this.transitions = this.indexTransitions(transitions)
     this.events = this.indexEvents(transitions)
     this.messages = this.indexMessages(messages)
-    this.state = this.getInitialState(states)
+    this.cstates = this.getInitialStates(states)
     this.data = { ...data }
     this.observable = new Observable()
 
   }
 
-  receive({event, payload}){
-    const transition = this.getTransition(event, payload)
-    if(!transition) return false
-    if(!this.validateTransition(transition, event, payload)) return false
-    this.callMethod(this.state.exit, event, payload)
-    this.state = this.states[transition.target]
-    this.callMethod(this.state.entry, event, payload)
-    this.observable.publish(ON_TRANSITION, { event, payload, machine: this })
-    this.callMethod(transition.method, event, payload)
+  receive({ event, payload }){
+    this.cstates = this.cstates.map(state => {
+      const transition = this.getTransition(state, event, payload)
+      if(!transition) return state
+      if(!this.validateTransition(transition, event, payload)) return state
+      this.callMethod(state.exit, event, payload)
+      state = this.states[transition.target] || state
+      this.callMethod(state.entry, event, payload)
+      this.observable.publish(ON_TRANSITION, { event, payload, machine: this })
+      this.callMethod(transition.method, event, payload)
+      return state
+    })
   }
 
-  getTransition(event, payload){
-    const key = `${this.state.id} ${event}`
+  getTransition(state, event, payload){
+    const key = `${state.id} ${event}`
     let transition = this.transitions[key]
     if(!transition) return false
+
     const isConditional = Array.isArray(transition.target)
     if(isConditional){
       const index = this.callMethod(transition.target[0], event, payload)
       transition = { ...transition, target: transition.target[!index + 1] }
     }
-    const targetState = !this.states[transition.target]
-    if(targetState){
+
+    const isSwitch = typeof transition.target === 'object'
+    if(isSwitch){
+      const switches = Object.keys(transition.target)
+      const branch = switches.find(method => this.callMethod(method, event, payload))
+      if(!branch) return
+      const target = transition.target[branch]
+      transition = { ...transition, target }
+    }
+
+    const targetState = this.states[transition.target]
+    if(!targetState){
       return console.warn(`State ${transition.target} does not exist`)
     }
+
     return transition
   }
 
@@ -71,7 +86,7 @@ class Machine {
     if(!method || !this.schema.methods) return this
     if(!this.schema.methods[method]) err(6, { method })
     const response = this.schema.methods[method]({
-      state: this.state,
+      states: this.cstates,
       data: this.data,
       event,
       payload
@@ -103,13 +118,15 @@ class Machine {
   indexTransitions(transitions){
     if(!transitions) return
     return transitions.reduce((accum, transition) => {
-      const { source, target, event } = transition
-      const isInvalid = source && target && event
-      if(!isInvalid) err(4)
-      const transitionKey = `${source} ${event}`
+      const { source, event } = transition
+      const sources = Array.isArray(source) ? source : [ source ]
+      const transitions = sources.reduce((accum, source) => ({
+        ...accum,
+        [`${source} ${event}`]: transition
+      }), {})
       return {
         ...accum,
-        [transitionKey]: transition
+        ...transitions
       }
     }, {})
   }
@@ -129,8 +146,8 @@ class Machine {
     }), {})
   }
 
-  getInitialState(states){
-    return states.find(({ initial }) => initial)
+  getInitialStates(states){
+    return states.filter(({ initial }) => initial)
   }
 
   callConstructor(payload){
@@ -143,7 +160,12 @@ class Machine {
   send(messages){
     if(!messages) return
     if(!Array.isArray(messages)) messages = [messages]
-    messages.forEach(message => message && this.observable.publish(ON_SEND, message))
+    for(let i = 0; i < messages.length; i++){
+      const message = messages[i]
+      if(!message) continue
+      if(message.self) this.receive(message)
+      else this.observable.publish(ON_SEND, message)
+    }
     return this
   }
 
@@ -158,29 +180,35 @@ class Machine {
     return this
   }
 
-  getStates(){
-    let accum = []
-    if(!this.state) return {}
-    return this.state.id.split('.').reduce((states, state) => {
-      accum.push(state)
-      return { ...states, [accum.join('.')]: true }
-    }, {})
+  getStates({ explode }){
+    const states = {}
+    for(let i = 0; i < this.cstates.length; i++){
+      const state = this.cstates[i]
+      if(!explode){
+        states[state.id] = true
+        continue
+      }
+      const substates = state.id.split('.')
+      let accum = ''
+      for(let j = 0; j < substates.length; j++){
+        const substate = substates[j]
+        accum += j ? '.' + substate : substate
+        states[accum] = true
+      }
+    }
+    return states
   }
 
   isCurrentState(stateId){
-    return this.state.id == stateId
+    return this.getStates().includes(stateId)
   }
 
   is(stateId){
     return this.getStates()[stateId]
   }
 
-  isEventAvailable(event){
-    return Boolean(this.events[this.state.id].includes(event))
-  }
-
-  onSend(callback){
-    this.observable.subscribe(ON_SEND, callback)
+  onSend(callback, signature){
+    this.observable.subscribe(ON_SEND, callback, signature)
     return this
   }
 
