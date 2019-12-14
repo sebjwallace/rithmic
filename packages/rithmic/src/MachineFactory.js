@@ -25,7 +25,7 @@ module.exports = class MachineFactory {
   createFromRegistry(schemaId){
     const schema = this.schemaRegistry.get({ id: schemaId })
     const machine = new Machine(schema)
-    machine.data = JSON.parse(JSON.stringify(schema.data))
+    machine.data = JSON.parse(JSON.stringify(schema.data || {}))
     machine.id = Util.Uniquify(machine.id)
     return machine
   }

@@ -13,6 +13,7 @@ module.exports = class Installer {
 
   installMachine(machine){
     machine.onDelete(() => this.uninstallMachine(machine))
+    machine._request = this.eventBus.publish.bind(this.eventBus)
     this.handleSubscriptions(machine)
     this.handleTransitions(machine)
     this.handleMachineMessages(machine)
@@ -34,7 +35,7 @@ module.exports = class Installer {
         event,
         subscriber: machine.id,
         callback: ({ event, payload }) => {
-          machine.callMethod(method, event, payload)
+          return machine.callMethod(method, event, payload).response
         }
       })
     })

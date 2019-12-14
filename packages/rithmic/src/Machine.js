@@ -16,6 +16,7 @@ class Machine {
       states,
       transitions,
       messages,
+      publications,
       data = {},
     } = schema
 
@@ -27,6 +28,7 @@ class Machine {
     this.transitions = this.indexTransitions(transitions)
     this.events = this.indexEvents(transitions)
     this.messages = this.indexMessages(messages)
+    this.publications = publications
     this.cstates = this.getInitialStates(states)
     this.data = { ...data }
     this.observable = new Observable()
@@ -41,10 +43,11 @@ class Machine {
       this.callMethod(state.exit, event, payload)
       state = this.states[transition.target] || state
       this.callMethod(state.entry, event, payload)
-      this.observable.publish(ON_TRANSITION, { event, payload, machine: this })
+      this.callPublication(transition.publish)
       this.callMethod(transition.method, event, payload)
       return state
     })
+    this.observable.publish(ON_TRANSITION, { event, payload, machine: this })
   }
 
   getTransition(state, event, payload){
@@ -89,19 +92,22 @@ class Machine {
       states: this.cstates,
       data: this.data,
       event,
-      payload
+      payload,
+      request: this._request
     })
     const {
       data,
       send,
       receive,
       addTag,
+      publish,
       delete: del
     } = response || {}
     if(data) this.data = data
     if(send) this.send(send)
     if(receive) this.receive(receive)
     if(addTag) this.addTag(addTag)
+    if(publish) this.callPublication(publish)
     if(del) this.delete()
     this.observable.publish(ON_METHOD_CALL, { event, payload, machine: this })
     return response
@@ -155,6 +161,18 @@ class Machine {
     if(methods && methods.constructor){
       this.callMethod('constructor', null, payload)
     }
+  }
+
+  callPublication(publish){
+    if(!publish) return
+    publish = Array.isArray(publish) ? publish : [publish]
+    publish.forEach(publication => {
+      const { event, payload } = this.publications[publication]
+      this.send({
+        event,
+        payload: payload({ data: this.data })
+      })
+    })
   }
 
   send(messages){

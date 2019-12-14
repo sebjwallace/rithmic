@@ -9,15 +9,19 @@ module.exports = class EventBus {
 
   publish(events){
     if(!Array.isArray(events)) events = [events]
+    const responses = []
     events.forEach(({ event, payload } = {}) => {
       if(!event) return
       const subscribers = this.events[event]
       if(!subscribers){
         return console.warn(`No subscribers for event ${event}`)
       }
-      subscribers.forEach(({ callback }) => callback({event, payload}))
+      subscribers.forEach(({ callback }) => {
+        const response = callback({event, payload})
+        responses.push(response)
+      })
     })
-    return this
+    return responses
   }
 
   subscribe({ event, events, subscriber, callback }){
