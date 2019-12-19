@@ -13,6 +13,7 @@ module.exports = class Tree {
     this.machineFactory = machineFactory
     this.treeRegistry = new Registry()
     this.tree = null
+    this.index = {}
 
   }
 
@@ -25,13 +26,34 @@ module.exports = class Tree {
 
   }
 
+  getMachine(id){
+    return this.index[id]
+  }
+
+  getMachines(tag){
+    return this.index[tag] || []
+  }
+
   createMachineTree(treeId){
 
     const traverse = (node) => {
-      const { schema, children = [] } = node
+      const { schema, children = [], id, tag } = node
 
       /* create and register the machine */
       const machine = this.machineFactory.create({ schema })
+
+      /* index the machine so it can be required from client via id */
+      if(id){
+        this.index[id] = machine
+      }
+
+      /* index the machine so it can be required from client via tag */
+      if(tag){
+        if(!this.index[tag]){
+          this.index[tag] = []
+        }
+        this.index[tag].push(machine)
+      }
 
       /* initialize a mutable object that can be updated */
       /*  for creations and deletions */

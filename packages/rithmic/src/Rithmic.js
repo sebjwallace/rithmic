@@ -19,6 +19,7 @@ class Rithmic {
       machineFactory: this.machineFactory,
       eventBus: this.eventBus
     })
+    this.request = this.eventBus.publish.bind(this.eventBus)
   }
 
   create(schema){

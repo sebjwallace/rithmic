@@ -15,7 +15,6 @@ class Machine {
       tags = [],
       states,
       transitions,
-      messages,
       publications,
       data = {},
     } = schema
@@ -27,8 +26,7 @@ class Machine {
     this.states = this.indexStates(states)
     this.transitions = this.indexTransitions(transitions)
     this.events = this.indexEvents(transitions)
-    this.messages = this.indexMessages(messages)
-    this.publications = publications
+    this.publications = this.indexPublications(publications)
     this.cstates = this.getInitialStates(states)
     this.data = { ...data }
     this.observable = new Observable()
@@ -101,7 +99,8 @@ class Machine {
       receive,
       addTag,
       publish,
-      delete: del
+      delete: del,
+      reset
     } = response || {}
     if(data) this.data = data
     if(send) this.send(send)
@@ -109,6 +108,7 @@ class Machine {
     if(addTag) this.addTag(addTag)
     if(publish) this.callPublication(publish)
     if(del) this.delete()
+    if(reset) this.reset()
     this.observable.publish(ON_METHOD_CALL, { event, payload, machine: this })
     return response
   }
@@ -144,11 +144,11 @@ class Machine {
     }), {})
   }
 
-  indexMessages(messages){
-    if(!messages) return this
-    return messages.reduce((accum, { event, method }) => ({
+  indexPublications(publications){
+    if(!publications) return this
+    return publications.reduce((accum, publication) => ({
       ...accum,
-      [event]: method
+      [publication.id]: publication
     }), {})
   }
 
@@ -195,6 +195,12 @@ class Machine {
 
   delete(){
     this.observable.publish(ON_DELETE, this)
+    return this
+  }
+
+  reset(){
+    this.cstates = this.getInitialStates(this.schema.states)
+    this.data = { ...this.schema.data }
     return this
   }
 
