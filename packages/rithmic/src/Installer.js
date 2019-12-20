@@ -30,12 +30,17 @@ module.exports = class Installer {
   handleSubscriptions(machine){
     const { schema: { subscriptions } } = machine
     if(!subscriptions) return
-    subscriptions.forEach(({ event, method }) => {
+    subscriptions.forEach(({ event, method, guard }) => {
       this.eventBus.subscribe({
         event,
         subscriber: machine.id,
         callback: ({ event, payload }) => {
-          return machine.callMethod(method, event, payload).response
+          if(guard){
+            const isGuarded = !machine.callMethod(guard, event, payload)
+            if(isGuarded) return
+          }
+          const { response } = machine.callMethod(method, event, payload) || {}
+          return response
         }
       })
     })

@@ -107,6 +107,11 @@ module.exports = class Tree {
       }, [])
 
       obj.children = childMachines
+
+      /* if the machine was not created by the parent then call its constructor */
+      if(!node.create){
+        machine.callConstructor()
+      }
       
       return obj
     }
